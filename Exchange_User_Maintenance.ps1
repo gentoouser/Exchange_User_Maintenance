@@ -1,5 +1,5 @@
 # Exchange User Maintenance Script
-# Version 1.3.0
+# Version 1.3.2
 # Operations:
 #	*Enables User and Contact to show up in the GAL and be part of Distribution lists. (Does Not Create Mailboxes)
 #	*Remove groups and distribution lists from $DisabledOUDN OU.
@@ -18,6 +18,26 @@
 # Code snippits from Sources:
 #	http://gsexdev.blogspot.in/2012/11/creating-sender-domain-auto-reply-rule.html
 #	http://poshcode.org/624
+
+#############################################################################
+# User Varibles
+#############################################################################
+
+#User Home Drive Share
+$HomeDriveShare = "\\File Server FQDN\Share"
+$PSTFolder = "Outlook"
+$PSTExportTime = 120
+$ExchangeServer = "Exchange Server"
+$Company = "Company Name"
+$DisabledOUDN = "Disabled user Distinguished Name"
+$DisabledOU = (Get-ADOrganizationalUnit $DisabledOUDN).Name
+$DisabledOUWithEmailRule = "Disabled Users under 6 months"
+$EnableEmailUsersOUs = "OU Name to Mail Enable","2nd OU Name to Mail Enable"
+$ExchangeGroupsOU = "Exchange E-Mail Groups"
+$ADContactOU = "AD Contacts OU Name"
+
+
+#############################################################################
 
 ##Load Active Directory Module
 Write-Host ("Loading Active Directory Plugins") -foregroundcolor "Green"
@@ -47,28 +67,7 @@ If ($([System.Net.Dns]::GetHostByName(($env:computerName))).hostname -eq $([Syst
 	$ERPSession = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri http://$ExchangeServer/PowerShell/ -Authentication Kerberos
 	Import-PSSession $ERPSession -AllowClobber
 }
-#############################################################################
-# User Varibles
-#############################################################################
 
-#User Home Drive Share
-$HomeDriveShare = "\\File Server FQDN\Share"
-$PSTFolder = "Outlook"
-$PSTExportTime = 120
-$ExchangeServer = "Exchange Server"
-$Company = "Company Name"
-$DisabledOUDN = "Disabled user Distinguished Name"
-$DisabledOU = (Get-ADOrganizationalUnit $DisabledOUDN).Name
-$DisabledOUWithEmailRule = "Disabled Users under 6 months"
-$EnableEmailUsersOUs = "OU Name to Mail Enable","2nd OU Name to Mail Enable"
-$ExchangeGroupsOU = "Exchange E-Mail Groups"
-$ADContactOU = "AD Contacts OU Name"
-
-#Set Defaults
-$PrimaryEmailDomain = ((get-emailaddresspolicy | Where-Object { $_.Priority -Match "1" } ).EnabledPrimarySMTPAddressTemplate).split('@')[-1]
-
-
-#############################################################################
 ## Choose to ignore any SSL Warning issues caused by Self Signed Certificates  
 
 ## Code From http://poshcode.org/624
@@ -102,6 +101,9 @@ $TrustAll=$TAAssembly.CreateInstance("Local.ToolkitExtensions.Net.CertificatePol
 [System.Net.ServicePointManager]::CertificatePolicy=$TrustAll
 
 ## end code from http://poshcode.org/624
+
+#Set Defaults
+$PrimaryEmailDomain = ((get-emailaddresspolicy | Where-Object { $_.Priority -Match "1" } ).EnabledPrimarySMTPAddressTemplate).split('@')[-1]
 
 
 ForEach ($EMOU in $EnableEmailUsersOUs) {
@@ -155,44 +157,57 @@ Write-Host ("Searching for Users to Disable in Exchange in OU: $DisabledOU")
 #Mail Disable All user that have E-Mail Address in an AD OU "Disabled Users"
 $enablemailusers = get-user -organizationalUnit $DisabledOU | where-object {$_.RecipientType -ne "User" -and $_.WindowsEmailAddress -ne $null}
 ForEach ($EEUser in $enablemailusers) {
-
-	if ($EEUser.WindowsEmailAddress -ne "") {
+	$CurrentMailBox = $EEUser | Get-Mailbox
+	If ($EEUser.WindowsEmailAddress -ne "") {
 		If ($EEUser.RecipientType -eq "MailUser" ) {
 			Write-Host ("`tDisable Mail Name: " + $EEUser.Name + " Alias: " + $EEUser.SamAccountName + " Email: " + $EEUser.WindowsEmailAddress) -foregroundcolor "magenta"
 			Disable-MailUser -Identity $EEUser.SamAccountName -Confirm:$False
 		}
 		If ($EEUser.RecipientType -eq "UserMailbox" ) {
 			#Testing to see if is in queue
-			If ((Get-MailboxExportRequest | Where-Object { $_.Identity  -contains $EEUser.Identity -And $_.Status -ne "Completed"}) -eq $null) {
-				Write-Host ("`tExport Mail Name: " + $EEUser.Name + " Alias: " + $EEUser.SamAccountName + " Email: " + $EEUser.WindowsEmailAddress) -foregroundcolor "Blue"
+			If ((Get-MailboxExportRequest | Where-Object { $_.Identity  -like $($CurrentMailBox.Identity + "*")}).count -eq 0) {
+				Write-Host ("`tExport Mail Name: " + $EEUser.Name + " Alias: " + $EEUser.SamAccountName + " Email: " + $EEUser.WindowsEmailAddress)  -foregroundcolor "Cyan"
 				#Create New Home Drive
 				if (-Not (Test-Path $($HomeDriveShare + "\" + $EEUser.SamAccountName))) 
 					{New-Item -ItemType directory -Path ($HomeDriveShare + "\" + $EEUser.SamAccountName)}
 				if (-Not (Test-Path $($HomeDriveShare + "\" + $EEUser.SamAccountName + "\" + $PSTFolder + "\"))) 
 					{New-Item -ItemType directory -Path ($HomeDriveShare + "\" + $EEUser.SamAccountName + "\" + $PSTFolder + "\")}
 				#Export Mailbox to PST
-				New-MailboxExportRequest -Mailbox $EEUser.SamAccountName -FilePath $($HomeDriveShare + "\" + $EEUser.SamAccountName  + "\" + $PSTFolder + "\" + $EEUser.SamAccountName + ".pst")
-
-				while ( (Get-MailboxExportRequestStatistics -Identity $($EEUser.SamAccountName + "\MailboxExport")).status -ne "Completed" ) {
-					#View Status of Mailbox Export
-					Get-MailboxExportRequestStatistics -Identity $($EEUser.SamAccountName + "\MailboxExport") | ft SourceAlias,Status,PercentComplete,EstimatedTransferSize,BytesTransferred
-					Start-Sleep -Seconds 10
+				New-MailboxExportRequest -Mailbox $EEUser.SamAccountName -FilePath $($HomeDriveShare + "\" + $EEUser.SamAccountName  + "\" + $PSTFolder + "\" + $($EEUser.SamAccountName) + ".pst")
+				$ExportJobName = $null
+				Get-MailboxExportRequest | Where-Object { $_.Identity  -like $($CurrentMailBox.Identity + "*")} | ForEach-Object {
+					$ExportJobName = $_.Name 
 				}
-
-				#Remove mailbox from Exchange
-				Disable-Mailbox -Identity $EEUser.SamAccountName -confirm:$false			
-
+				If ($ExportJobName -ne $null) {
+					while ((Get-MailboxExportRequestStatistics -Identity $($CurrentMailBox.SamAccountName + "\" + $ExportJobName)).status -ne "Completed") {
+						#View Status of Mailbox Export
+						Get-MailboxExportRequestStatistics -Identity $($CurrentMailBox.SamAccountName + "\" + $ExportJobName) | ft SourceAlias,Status,PercentComplete,EstimatedTransferSize,BytesTransferred
+						Start-Sleep -Seconds 10
+					}
+				}
+				$ExportMailBoxList = Get-MailboxExportRequest | Where-Object { $_.Identity  -like $($CurrentMailBox.Identity + "*") -And $_.status -ne "Completed"} 
+				$ExportMailBoxListCompleted = Get-MailboxExportRequest | Where-Object { $_.Identity  -like $($CurrentMailBox.Identity + "*")} 
+				If ($ExportMailBoxList.count -eq $ExportMailBoxListCompleted.Count) {
+					#Remove mailbox from Exchange
+					Disable-Mailbox -Identity $EEUser.SamAccountName -confirm:$false
+				}
 			} else {
 				Write-Host ("`t`tUser " + $EEUser.Name + " already submitted.")
-				while ((Get-MailboxExportRequestStatistics -Identity ($EEUser.SamAccountName + "\MailboxExport")).status -ne $("Completed")) {
-					#View Status of Mailbox Export
-					Get-MailboxExportRequestStatistics -Identity ($EEUser.SamAccountName + "\MailboxExport") | ft SourceAlias,Status,PercentComplete,EstimatedTransferSize,BytesTransferred
-					Start-Sleep -Seconds 10
+				$ExportJobName = $null
+				Get-MailboxExportRequest | Where-Object { $_.Identity  -like $($CurrentMailBox.Identity + "*")} | ForEach-Object {$ExportJobName = $_.Name }
+				If ($ExportJobName -ne $null) {
+					while ( (Get-MailboxExportRequestStatistics -Identity $($CurrentMailBox.SamAccountName + "\" + $ExportJobName)).status -ne "Completed" ) {
+						#View Status of Mailbox Export
+						Get-MailboxExportRequestStatistics -Identity $($CurrentMailBox.SamAccountName + "\" + $ExportJobName) | ft SourceAlias,Status,PercentComplete,EstimatedTransferSize,BytesTransferred
+						Start-Sleep -Seconds 10
+					}
 				}
-
-				#Remove mailbox from Exchange
-				Disable-Mailbox -Identity $EEUser.SamAccountName -confirm:$false
-								
+				$ExportMailBoxList = Get-MailboxExportRequest | Where-Object { $_.Identity  -like $($CurrentMailBox.Identity + "*") -And $_.status -ne "Completed"} 
+				$ExportMailBoxListCompleted = Get-MailboxExportRequest | Where-Object { $_.Identity  -like $($CurrentMailBox.Identity + "*")} 
+				If ($ExportMailBoxList.count -eq $ExportMailBoxListCompleted.Count) {
+					#Remove mailbox from Exchange
+					Disable-Mailbox -Identity $EEUser.SamAccountName -confirm:$false
+				}
 			}
 		}
 	}
@@ -221,15 +236,15 @@ ForEach ($CurrentAccount In $enablemailusers) {
 			#OOA Set
 		} else {
 			#Disable all other rules
-			## Code From http://gsexdev.blogspot.in/2012/11/creating-sender-domain-auto-reply-rule.html
+			
 			ForEach ($Rule in $AllRules) {
-				Disable-InboxRule -Identity $Rule.RuleIdentity -Mailbox $CurrentAccount.WindowsEmailAddress
+				Disable-InboxRule -Identity $Rule.RuleIdentity -Mailbox $CurrentAccount.WindowsEmailAddress -Confirm:$false -Force
 			}
-			Write-Host ("`tCreating Email Rule for $CurrentAccount.SamAccountName") -foregroundcolor "Blue"
+			Write-Host ("`tCreating Email Rule for " + $($CurrentAccount.SamAccountName)) -foregroundcolor "Cyan"
 			$EWSservice.AutodiscoverUrl($CurrentAccount.WindowsEmailAddress,{$true})
 			$EWSservice.ImpersonatedUserId = new-object Microsoft.Exchange.WebServices.Data.ImpersonatedUserId([Microsoft.Exchange.WebServices.Data.ConnectingIdType]::SmtpAddress, $CurrentAccount.WindowsEmailAddress) 
 			Write-Host ("`t Using CAS Server : " + $EWSservice.url)
-			
+			## Code From http://gsexdev.blogspot.in/2012/11/creating-sender-domain-auto-reply-rule.html
 			#Create Message to reply with
 			$templateEmail = New-Object Microsoft.Exchange.WebServices.Data.EmailMessage -ArgumentList $EWSservice
 			$templateEmail.ItemClass = "IPM.Note.Rules.ReplyTemplate.Microsoft";
@@ -250,58 +265,73 @@ ForEach ($CurrentAccount In $enablemailusers) {
 			$createRule = New-Object Microsoft.Exchange.WebServices.Data.CreateRuleOperation[] 1
 			$createRule[0] = $inboxRule
 			$EWSservice.UpdateInboxRules($createRule,$true);
-			
 			## End Code From http://gsexdev.blogspot.in/2012/11/creating-sender-domain-auto-reply-rule.html
 			
 			#Enable Mail forwarding to manager.
-			Write-Host ("`tForwarding e-mail for $CurrentAccount.SamAccountName to $($UsersManager.Name)") -foregroundcolor "Blue"
+			Write-Host ("`tForwarding e-mail for $CurrentAccount.SamAccountName to $($UsersManager.Name)") -foregroundcolor "Cyan"
 			If ($CurrentAccount.ForwardingAddress -eq $null ) {
 					If (-Not [string]::IsNullOrEmpty($UsersManager.WindowsEmailAddress.ToString())) {
 						$CurrentAccount | Set-Mailbox -DeliverToMailboxAndForward $true -ForwardingSMTPAddress "$($UsersManager.WindowsEmailAddress.ToString())"
-						#$CurrentAccount | Set-MailboxAutoReplyConfiguration -AutoReplyState enabled -ExternalAudience "all" -InternalMessage "$CurrentAccount.FirstName is no longer with $Company For any business related needs please e-mail $UsersManager.FirstName at $UsersManager.WindowsEmailAddress." -ExternalMessage "$CurrentAccount.FirstName is no longer with $Company For any business related needs please e-mail $UsersManager.FirstName at $UsersManager.WindowsEmailAddress."
 					}	
 			}
 		}
 
-		#Write-Host ("Testing Mail Name: " + $_.Name + " Alias: " + $($data[0]) + "Disable Date: " + $StrTestDate + " Date Age: " + $TimeSpan.TotalDays)
-		
 		If ($TimeSpan.TotalDays -ge $PSTExportTime) {
 			#Testing to see if is in queue
-			If ((Get-MailboxExportRequest | Where-Object { $_.Identity  -contains $($CurrentAccount.Identity)}) -eq $null) {
-				Write-Host ("`tExport Mail Name: " + $CurrentAccount.Name + " Alias: " + $CurrentAccount.SamAccountName + " Email: " + $CurrentAccount.WindowsEmailAddress)  -foregroundcolor "Blue"
+			If ((Get-MailboxExportRequest | Where-Object { $_.Identity  -like $($CurrentMailBox.Identity + "*")}).count -eq 0) {
+				Write-Host ("`tExport Mail Name: " + $CurrentAccount.Name + " Alias: " + $CurrentAccount.SamAccountName + " Email: " + $CurrentAccount.WindowsEmailAddress)  -foregroundcolor "Cyan"
 				#Create New Home Drive
-				if (-Not (Test-Path $HomeDriveShare + "\" + $CurrentAccount.SamAccountName)) 
+				if (-Not (Test-Path $($HomeDriveShare + "\" + $CurrentAccount.SamAccountName))) 
 					{New-Item -ItemType directory -Path ($HomeDriveShare + "\" + $CurrentAccount.SamAccountName)}
-				if (-Not (Test-Path $HomeDriveShare + "\" + $CurrentAccount.SamAccountName + "\" + $PSTFolder + "\")) 
+				if (-Not (Test-Path $($HomeDriveShare + "\" + $CurrentAccount.SamAccountName + "\" + $PSTFolder + "\"))) 
 					{New-Item -ItemType directory -Path ($HomeDriveShare + "\" + $CurrentAccount.SamAccountName + "\" + $PSTFolder + "\")}
 				#Export Mailbox to PST
-				New-MailboxExportRequest -Mailbox $_.SamAccountName -FilePath $($HomeDriveShare + "\" + $CurrentAccount.SamAccountName  + "\" + $PSTFolder + "\" + $CurrentAccount.SamAccountName + ".pst")
-
-				while ( (Get-MailboxExportRequestStatistics -Identity $($CurrentAccount.SamAccountName + "\MailboxExport")).status -ne "Completed" ) {
-					#View Status of Mailbox Export
-					Get-MailboxExportRequestStatistics -Identity $($CurrentAccount.SamAccountName + "\MailboxExport") | ft SourceAlias,Status,PercentComplete,EstimatedTransferSize,BytesTransferred
-					Start-Sleep -Seconds 10
+				New-MailboxExportRequest -Mailbox $CurrentAccount.SamAccountName -FilePath $($HomeDriveShare + "\" + $CurrentAccount.SamAccountName  + "\" + $PSTFolder + "\" + $($CurrentAccount.SamAccountName) + ".pst")
+				$ExportJobName = $null
+				$ExportMailBoxList = Get-MailboxExportRequest | Where-Object { $_.Identity  -like $($CurrentMailBox.Identity + "*") -And $_.Status -ne "Completed"} 
+				ForEach ($ExportMailJob in $ExportMailBoxList) {
+					Write-Host ($("`t" + $ExportMailJob.Name + " " + $ExportMailJob.Mailbox))
+					If ($_.Name -ne "" ) {
+						$ExportJobName = $ExportMailJob.Name 
+					}
 				}
-
-				#Remove mailbox from Exchange
-				Disable-Mailbox -Identity $CurrentAccount.SamAccountName -confirm:$false
-				
-				#Move User to Disabled Outlook
-				Move-ADObject -Identity $ADUser -TargetPath $DisabledOUDN
+				If ($ExportJobName -ne $null) {
+					while ((Get-MailboxExportRequestStatistics -Identity $($CurrentMailBox.SamAccountName + "\" + $ExportJobName)).status -ne "Completed") {
+						#View Status of Mailbox Export
+						Get-MailboxExportRequestStatistics -Identity $($CurrentMailBox.SamAccountName + "\" + $ExportJobName) | ft SourceAlias,Status,PercentComplete,EstimatedTransferSize,BytesTransferred
+						Start-Sleep -Seconds 10
+						Write-Host ("`t" + (Get-MailboxExportRequestStatistics -Identity $($CurrentMailBox.SamAccountName + "\" + $ExportJobName)).status)
+					}
+				}
+				$ExportMailBoxList = Get-MailboxExportRequest | Where-Object { $_.Identity  -like $($CurrentMailBox.Identity + "*") -And $_.status -ne "Completed"} 
+				$ExportMailBoxListCompleted = Get-MailboxExportRequest | Where-Object { $_.Identity  -like $($CurrentMailBox.Identity + "*")} 
+				If ($ExportMailBoxList.count -eq $ExportMailBoxListCompleted.Count) {
+					#Remove mailbox from Exchange
+					Disable-Mailbox -Identity $CurrentAccount.SamAccountName -confirm:$false
+					
+					#Move User to Disabled Outlook
+					Move-ADObject -Identity $ADUser -TargetPath $DisabledOUDN
+				}
 			} else {
 				Write-Host ("`t`tUser " + $CurrentAccount.Name + " already submitted.")
-				while ((Get-MailboxExportRequestStatistics -Identity ($CurrentAccount.SamAccountName + "\MailboxExport")).status -ne $("Completed")) {
-					#View Status of Mailbox Export
-					Get-MailboxExportRequestStatistics -Identity ($CurrentAccount.SamAccountName + "\MailboxExport") | ft SourceAlias,Status,PercentComplete,EstimatedTransferSize,BytesTransferred
-					Start-Sleep -Seconds 10
+				$ExportJobName = $null
+				Get-MailboxExportRequest | Where-Object { $_.Identity  -like $($CurrentMailBox.Identity + "*")} | ForEach-Object {$ExportJobName = $_.Name }
+				If ($ExportJobName -ne $null) {
+					while ( (Get-MailboxExportRequestStatistics -Identity $($CurrentMailBox.SamAccountName + "\" + $ExportJobName)).status -ne "Completed" ) {
+						#View Status of Mailbox Export
+						Get-MailboxExportRequestStatistics -Identity $($CurrentMailBox.SamAccountName + "\" + $ExportJobName) | ft SourceAlias,Status,PercentComplete,EstimatedTransferSize,BytesTransferred
+						Start-Sleep -Seconds 10
+					}
 				}
-
-				#Remove mailbox from Exchange
-				Disable-Mailbox -Identity $CurrentAccount.SamAccountName -confirm:$false
-				
-				#Move User to Disabled Outlook
-				Move-ADObject -Identity $ADUser -TargetPath $DisabledOUDN
-				
+				$ExportMailBoxList = Get-MailboxExportRequest | Where-Object { $_.Identity  -like $($CurrentMailBox.Identity + "*") -And $_.status -ne "Completed"} 
+				$ExportMailBoxListCompleted = Get-MailboxExportRequest | Where-Object { $_.Identity  -like $($CurrentMailBox.Identity + "*")} 
+				If ($ExportMailBoxList.count -eq $ExportMailBoxListCompleted.Count) {
+					#Remove mailbox from Exchange
+					Disable-Mailbox -Identity $CurrentAccount.SamAccountName -confirm:$false
+					
+					#Move User to Disabled Outlook
+					Move-ADObject -Identity $ADUser -TargetPath $DisabledOUDN
+				}
 			}
 		}
     }
