@@ -1,5 +1,5 @@
 # Exchange User Maintenance Script
-# Version 1.4.5
+# Version 1.4.7
 # Operations:
 #	*Enables Mailboxes for user in select OUs
 #	*Enables User and Contact to show up in the GAL and be part of Distribution lists from select OUs. (Does Not Create Mailboxes) 
@@ -26,7 +26,7 @@
 #	*Updated to allow groups to have names with spaces
 #	*Added Enable Mailboxes - Version 1.4.0
 #	*Updated Auto-Reply text - Version 1.4.3
-#	*Updated Mail Export to stop infinite loop - Version 1.4.5
+#	*Updated Mail Export to stop infinite loop - Version 1.4.7
 #############################################################################
 # User Variables
 #############################################################################
@@ -227,7 +227,9 @@ ForEach ($EEUser in $enablemailusers) {
 					Write-Host ("`t`t`t Job Status loop: " + $ExportJobStatusName.status)
 					while (($ExportJobStatusName.status -ne "Completed") -And ($ExportJobStatusName.status -ne "Failed")) {
 						#View Status of Mailbox Export
-						$ExportJobStatusName | ft SourceAlias,Status,PercentComplete,EstimatedTransferSize,BytesTransferred
+						Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity } | Get-MailboxExportRequestStatistics | ForEach-Object {If ($_.identity -ne $null) {$ExportJobStatusName = $_}}
+						 Write-Progress -Activity $("Exporting user: " + $ExportJobStatusName.SourceAlias ) -status $("Export Percent Complete:" + $ExportJobStatusName.PercentComplete + " Copied " + $ExportJobStatusName.BytesTransferred + " out of " + $ExportJobStatusName.EstimatedTransferSize ) -percentComplete $ExportJobStatusName.PercentComplete
+						 #$ExportJobStatusName | ft SourceAlias,Status,PercentComplete,EstimatedTransferSize,BytesTransferred
 						Start-Sleep -Seconds 10
 					}
 				}
@@ -248,7 +250,8 @@ ForEach ($EEUser in $enablemailusers) {
 						If ($ExportJobStatusName.status -eq "Completed") {break}
 						If ($ExportJobStatusName.status -eq "Failed") {break}
 						#View Status of Mailbox Export
-						$ExportJobStatusName | ft SourceAlias,Status,PercentComplete,EstimatedTransferSize,BytesTransferred
+						Write-Progress -Activity $("Exporting user: " + $ExportJobStatusName.SourceAlias ) -status $("Export Percent Complete:" + $ExportJobStatusName.PercentComplete + " Copied " + $ExportJobStatusName.BytesTransferred + " out of " + $ExportJobStatusName.EstimatedTransferSize ) -percentComplete $ExportJobStatusName.PercentComplete
+						#$ExportJobStatusName | ft SourceAlias,Status,PercentComplete,EstimatedTransferSize,BytesTransferred
 						Start-Sleep -Seconds 10
 					}
 				}
@@ -355,16 +358,17 @@ ForEach ($CurrentAccount In $enablemailusers) {
 				New-MailboxExportRequest -Mailbox $CurrentAccount.SamAccountName -FilePath $($HomeDriveShare + "\" + $CurrentAccount.SamAccountName  + "\" + $PSTFolder + "\" + $($CurrentAccount.SamAccountName) + '.pst')
 				$ExportJobName = $null
 
-				Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity } | Get-MailboxExportRequestStatistics | ForEach-Object {If ($_.identity -ne $null) {$ExportJobName = $_.name}}
+				Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity } | Get-MailboxExportRequestStatistics | ForEach-Object {If ($_.identity -ne $null) {$ExportJobName = $_}}
 
 				If ($ExportJobName -ne $null) {
-					while ($ExportJobStatusName.status -ne 10 ) {
+					while ($ExportJobName.status -ne 10 ) {
 						Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity } | Get-MailboxExportRequestStatistics | ForEach-Object {If ($_.identity -ne $null) {$ExportJobName = $_.name}}
 						# Write-Host ("`t`t`t`t Job Status loop: " + $ExportJobName.status)
 						If ($ExportJobName.status -eq "Completed") {break}
 						If ($ExportJobName.status -eq "Failed") {break}
 						#View Status of Mailbox Export
-						$ExportJobName | ft SourceAlias,Status,PercentComplete,EstimatedTransferSize,BytesTransferred
+						Write-Progress -Activity $("Exporting user: " + $ExportJobName.SourceAlias ) -status $("Export Percent Complete:" + $ExportJobName.PercentComplete + " Copied " + $ExportJobName.BytesTransferred + " out of " + $ExportJobName.EstimatedTransferSize ) -percentComplete $ExportJobName.PercentComplete
+						#$ExportJobName | ft SourceAlias,Status,PercentComplete,EstimatedTransferSize,BytesTransferred
 						Start-Sleep -Seconds 10
 					}
 				}
