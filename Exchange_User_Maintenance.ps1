@@ -1,5 +1,5 @@
 # Exchange User Maintenance Script
-# Version 1.4.10
+# Version 1.5.0
 # Operations:
 #	*Enables Mailboxes for user in select OUs
 #	*Enables User and Contact to show up in the GAL and be part of Distribution lists from select OUs. (Does Not Create Mailboxes) 
@@ -29,6 +29,8 @@
 #	*Updated Remove EWS managed API. Exchange 2016 can not use server side rule. - Version 1.4.9
 #	*Fixed Issue where Auto-Reply was trying to be set on MailUsers. - Version 1.4.9
 #	*Fixed Issue with AD description parsing. - Version 1.4.10
+#	*Added keywords "No Forwarding" in the description in AD to Not setup e-mail forwarding to manager. - Version 1.5.0
+#	*Added keywords "No Auto-Clean" in the description in AD to Not export mailbox to pst . - Version 1.5.0
 #############################################################################
 # User Variables
 #############################################################################
@@ -265,8 +267,8 @@ ForEach ($CurrentAccount In $enablemailusers) {
 			#Need to parse out description to get date and then see if it is over 6 months.
 			$ADUser = Get-adUser $CurrentAccount.SamAccountName -Properties Description,Manager
 			#converts string to date. Also do not display errors
-			If ($ADUser.description.substring(0,8) -is [int] ) {
-				$StrTestDate = ([datetime]::ParseExact($ADUser.description.substring(0,8),"yyyyMMdd",$null) 2>&1 | out-null)
+			If ($ADUser.description.substring(0,8) -match "[0-9]" ) {
+				$StrTestDate = [datetime]::ParseExact($ADUser.description.substring(0,8),"yyyyMMdd",$null) 
 			} else {
 				Write-Host ("`tPlease update AD description for " + $CurrentAccount.Name + " with deactivation date. Current description: " +  $ADUser.description) -foregroundcolor "red"
 				continue 
@@ -278,7 +280,7 @@ ForEach ($CurrentAccount In $enablemailusers) {
 			#Look to see if OOA E-Mail is set
 			
 			#Enable Mail forwarding to manager.
-			If ($CurrentAccount.ForwardingAddress -eq $null ) {
+			If ($CurrentAccount.ForwardingAddress -eq $null -and !($ADUser.description.Contains("No Forwarding"))) {
 					If (-Not [string]::IsNullOrEmpty($CurrentAccount.Manager.ToString())) {
 						Write-Host ("`tForwarding e-mail for $($CurrentAccount.SamAccountName) to $($UsersManager.Name)") -foregroundcolor "Cyan"
 						$CurrentAccount | Set-Mailbox -DeliverToMailboxAndForward $true -ForwardingSMTPAddress $($UsersManager.WindowsEmailAddress.ToString())
@@ -287,7 +289,7 @@ ForEach ($CurrentAccount In $enablemailusers) {
 					}	
 			}
 
-			If ($TimeSpan.TotalDays -ge $PSTExportTime) {
+			If ($TimeSpan.TotalDays -ge $PSTExportTime -and !($ADUser.description.Contains("No Auto-Clean"))) {
 				#Testing to see if is in queue
 				If ((Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity }).count -eq 0) {
 					Write-Host ("`tExport Mail Name: " + $CurrentAccount.Name + " Alias: " + $CurrentAccount.SamAccountName + " Email: " + $CurrentAccount.WindowsEmailAddress)  -foregroundcolor "Cyan"
