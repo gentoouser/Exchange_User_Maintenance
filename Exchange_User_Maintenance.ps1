@@ -1,5 +1,4 @@
 <# Exchange User Maintenance Script
- Version 1.5.1
  Operations:
 	*Enables Mailboxes for user in select OUs
 	*Enables User and Contact to show up in the GAL and be part of Distribution lists from select OUs. (Does Not Create Mailboxes) 
@@ -33,6 +32,7 @@ Changes:
 	*Added keywords "No Auto-Clean" in the description in AD to Not export mailbox to pst . - Version 1.5.0
 	*Added Transcript Logging - Version 1.5.1
 #>
+$ScriptVersion = 1.5.1
 #############################################################################
 # User Variables
 #############################################################################
@@ -59,6 +59,9 @@ $DisabledOUWithEmailRule = "OU for no longer with $Company User"
 #############################################################################
 If (-Not [string]::IsNullOrEmpty($LogFile)) {
 	Start-Transcript -Path $LogFile -Append
+	Write-Host ("Script: " + $MyInvocation.MyCommand.Name)
+	Write-Host ("Version: " + $ScriptVersion)
+	Write-Host (" "	)
 }
 ##Load Active Directory Module
 # Load AD PSSnapins
