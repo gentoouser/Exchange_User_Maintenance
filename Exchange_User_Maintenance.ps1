@@ -1,36 +1,38 @@
-# Exchange User Maintenance Script
-# Version 1.5.0
-# Operations:
-#	*Enables Mailboxes for user in select OUs
-#	*Enables User and Contact to show up in the GAL and be part of Distribution lists from select OUs. (Does Not Create Mailboxes) 
-#	*Remove groups and distribution lists from $DisabledOUDN OU.
-#	*Disabled Mail Users for $DisabledOUDN OU
-#	*Disabled Mail Box Users for $DisabledOUDN OU
-#	*Enable "No Longer With" Users for $DisabledOUWithEmailRule 
-#	*Disabled Mail Box Users for $DisabledOUWithEmailRule Over $PSTExportTime Days
-#Dependencies for this script:
-#	*Active Directory PowerShell Tools Installed
-#	*Active Directory Administrative Rights
-#	*Exchange impersonation Rights
-#	*Exchange Remote Management Shell
-#	*Exchange Administrative Rights
-#	*Exchange Trusted Subsystem needs to have Modify rights to user Home Drive
-# Code snippits from Sources:
-#	http://gsexdev.blogspot.in/2012/11/creating-sender-domain-auto-reply-rule.html
-#	http://poshcode.org/624
-#Changes:
-#	*Updated Enable-MailUser and Get-MailboxExportRequest for Exchange 2013
-#	*Updated to see Failed status when exporting to PST
-#	*Updated exporting to PST to be cleaner
-#	*Updated to allow groups to have names with spaces
-#	*Added Enable Mailboxes - Version 1.4.0
-#	*Updated Auto-Reply text - Version 1.4.3
-#	*Updated Mail Export to stop infinite loop - Version 1.4.7
-#	*Updated Remove EWS managed API. Exchange 2016 can not use server side rule. - Version 1.4.9
-#	*Fixed Issue where Auto-Reply was trying to be set on MailUsers. - Version 1.4.9
-#	*Fixed Issue with AD description parsing. - Version 1.4.10
-#	*Added keywords "No Forwarding" in the description in AD to Not setup e-mail forwarding to manager. - Version 1.5.0
-#	*Added keywords "No Auto-Clean" in the description in AD to Not export mailbox to pst . - Version 1.5.0
+<# Exchange User Maintenance Script
+ Version 1.5.1
+ Operations:
+	*Enables Mailboxes for user in select OUs
+	*Enables User and Contact to show up in the GAL and be part of Distribution lists from select OUs. (Does Not Create Mailboxes) 
+	*Remove groups and distribution lists from $DisabledOUDN OU.
+	*Disabled Mail Users for $DisabledOUDN OU
+	*Disabled Mail Box Users for $DisabledOUDN OU
+	*Enable "No Longer With" Users for $DisabledOUWithEmailRule 
+	*Disabled Mail Box Users for $DisabledOUWithEmailRule Over $PSTExportTime Days
+Dependencies for this script:
+	*Active Directory PowerShell Tools Installed
+	*Active Directory Administrative Rights
+	*Exchange impersonation Rights
+	*Exchange Remote Management Shell
+	*Exchange Administrative Rights
+	*Exchange Trusted Subsystem needs to have Modify rights to user Home Drive
+ Code snippits from Sources:
+	http://gsexdev.blogspot.in/2012/11/creating-sender-domain-auto-reply-rule.html
+	http://poshcode.org/624
+Changes:
+	*Updated Enable-MailUser and Get-MailboxExportRequest for Exchange 2013
+	*Updated to see Failed status when exporting to PST
+	*Updated exporting to PST to be cleaner
+	*Updated to allow groups to have names with spaces
+	*Added Enable Mailboxes - Version 1.4.0
+	*Updated Auto-Reply text - Version 1.4.3
+	*Updated Mail Export to stop infinite loop - Version 1.4.7
+	*Updated Remove EWS managed API. Exchange 2016 can not use server side rule. - Version 1.4.9
+	*Fixed Issue where Auto-Reply was trying to be set on MailUsers. - Version 1.4.9
+	*Fixed Issue with AD description parsing. - Version 1.4.10
+	*Added keywords "No Forwarding" in the description in AD to Not setup e-mail forwarding to manager. - Version 1.5.0
+	*Added keywords "No Auto-Clean" in the description in AD to Not export mailbox to pst . - Version 1.5.0
+	*Added Transcript Logging - Version 1.5.1
+#>
 #############################################################################
 # User Variables
 #############################################################################
@@ -41,6 +43,9 @@ $PSTFolder = "Outlook"
 $PSTExportTime = 120
 $ExchangeServer = "Exchange Server"
 $Company = "Company Name"
+$LogFile = ((Split-Path -Parent -Path $MyInvocation.MyCommand.Definition) + "\" + `
+		$MyInvocation.MyCommand.Name + "_" + `
+		(Get-Date -format yyyyMMdd-hhmm) + ".log")
 $Database = "Mail DataBase"
 
 #Organizational Units need to be in DistinguishedName format
@@ -52,7 +57,9 @@ $DisabledOUDN = "OU for Disabled user with no Exchange Attribute"
 $DisabledOUWithEmailRule = "OU for no longer with $Company User"
 
 #############################################################################
-
+If (-Not [string]::IsNullOrEmpty($LogFile)) {
+	Start-Transcript -Path $LogFile -Append
+}
 ##Load Active Directory Module
 # Load AD PSSnapins
 If ((Get-Module | Where-Object {$_.Name -Match "ActiveDirectory"}).Count -eq 0 ) {
@@ -356,4 +363,7 @@ ForEach ($CurrentAccount In $enablemailusers) {
 			}
 		}
 	}
+}
+If (-Not [string]::IsNullOrEmpty($LogFile)) {
+	Stop-Transcript
 }
