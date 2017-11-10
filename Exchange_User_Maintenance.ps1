@@ -31,6 +31,7 @@ Changes:
 	*Added keywords "No Forwarding" in the description in AD to Not setup e-mail forwarding to manager. - Version 1.5.0
 	*Added keywords "No Auto-Clean" in the description in AD to Not export mailbox to pst . - Version 1.5.0
 	*Added Transcript Logging - Version 1.5.1
+	*Updated so old e-mail address is put back on AD acount after exchange account is removed - Version 1.5.2	
 #>
 $ScriptVersion = 1.5.1
 #############################################################################
@@ -61,7 +62,7 @@ If (-Not [string]::IsNullOrEmpty($LogFile)) {
 	Start-Transcript -Path $LogFile -Append
 	Write-Host ("Script: " + $MyInvocation.MyCommand.Name)
 	Write-Host ("Version: " + $ScriptVersion)
-	Write-Host (" "	)
+	Write-Host (" ")
 }
 ##Load Active Directory Module
 # Load AD PSSnapins
@@ -71,6 +72,7 @@ If ((Get-Module | Where-Object {$_.Name -Match "ActiveDirectory"}).Count -eq 0 )
 } Else {
 	Write-Host ("Active Directory Plug-ins Already Loaded") -foregroundcolor "Green"
 }
+
 # Load All Exchange PSSnapins 
 If ((Get-PSSession | Where-Object { $_.ConfigurationName -Match "Microsoft.Exchange" }).Count -eq 0 ) {
 	Write-Host ("Loading Exchange Plugins") -foregroundcolor "Green"
@@ -199,7 +201,9 @@ ForEach ($EEUser in $enablemailusers) {
 	If ($EEUser.WindowsEmailAddress -ne "") {
 		If ($EEUser.RecipientType -eq "MailUser" ) {
 			Write-Host ("`tDisable Mail Name: " + $EEUser.Name + " Alias: " + $EEUser.SamAccountName + " Email: " + $EEUser.WindowsEmailAddress) -foregroundcolor "magenta"
+			$tempemail = $EEUser.WindowsEmailAddress
 			Disable-MailUser -Identity $EEUser.SamAccountName -Confirm:$False
+			get-user $EEUser.SamAccountName | Set-ADUser -EmailAddress $tempemail
 		}
 		If ($EEUser.RecipientType -eq "UserMailbox" ) {
 			$CurrentMailBox = $EEUser | Get-Mailbox
@@ -232,7 +236,9 @@ ForEach ($EEUser in $enablemailusers) {
 				$ExportMailBoxListCompleted = Get-MailboxExportRequest | Where-Object { $_.Mailbox -eq $CurrentMailBox.Identity} 
 				If ($ExportMailBoxList.count -eq $ExportMailBoxListCompleted.Count) {
 					#Remove mailbox from Exchange
+					$tempemail = $EEUser.WindowsEmailAddress	
 					Disable-Mailbox -Identity $EEUser.SamAccountName -confirm:$false
+					get-user $EEUser.SamAccountName | Set-ADUser -EmailAddress $tempemail
 				}
 			} else {
 				Write-Host ("`t`tUser " + $EEUser.Name + " already submitted. " + $DisabledOUDN)
@@ -255,7 +261,9 @@ ForEach ($EEUser in $enablemailusers) {
 				If ($ExportJobStatusName.status -eq 10) {
 					#Remove mailbox from Exchange
 					Write-Host ("`t`t`t`t Removing Mailbox from Exchange")
+					$tempemail = $EEUser.WindowsEmailAddress
 					Disable-Mailbox -Identity $EEUser.SamAccountName -confirm:$false
+					get-user $EEUser.SamAccountName | Set-ADUser -EmailAddress $tempemail
 				}
 			}
 		}
@@ -268,9 +276,23 @@ Write-Host ("Searching for Disable Users in OU: `t $DisabledOUWithEmailRule")
 $enablemailusers = get-user -organizationalUnit $DisabledOUWithEmailRule | where-object {$_.RecipientType -ne "User" -and $_.WindowsEmailAddress -ne $null}
 ForEach ($CurrentAccount In $enablemailusers) { 
 	If ( $CurrentAccount.WindowsEmailAddress -ne "") {
+	$UserDN = $CurrentAccount.DistinguishedName
+	$userSAM = $CurrentAccount.SamAccountName
+		Get-ADGroup -LDAPFilter "(member=$UserDN)" | foreach-object {
+		if ($_.name -ne "Domain Users") {
+			Write-Host ("`t Removing $userSAM from group $($_.name)") -foregroundcolor "magenta"
+			if ($_.DistinguishedName.tostring().contains($ExchangeGroupsOU)) {
+				Remove-DistributionGroupMember -identity $_.DistinguishedName -member $UserDN -Confirm:$False
+			} else {
+				remove-adgroupmember -identity $_.DistinguishedName -member $UserDN -Confirm:$False
+			}
+		} 
+	}
 		If ($CurrentAccount.RecipientType -eq "MailUser" ) {
 				Write-Host ("`tDisable Mail Name: " + $CurrentAccount.Name + " Alias: " + $CurrentAccount.SamAccountName + " Email: " + $CurrentAccount.WindowsEmailAddress) -foregroundcolor "magenta"
+				$tempemail = $CurrentAccount.WindowsEmailAddress
 				Disable-MailUser -Identity $CurrentAccount.SamAccountName -Confirm:$False
+				get-user $CurrentAccount.SamAccountName | Set-ADUser -EmailAddress $tempemail				
 			}	
 		If ( $CurrentAccount.RecipientType -eq "UserMailbox" ) {
 			$CurrentMailBox = $CurrentAccount | Get-Mailbox
@@ -331,7 +353,9 @@ ForEach ($CurrentAccount In $enablemailusers) {
 					If ($ExportJobName.status -eq 10) {
 						Write-Host ("`t`t`t`t Removing Mailbox from Exchange")
 						#Remove mailbox from Exchange
+						$tempemail = $CurrentAccount.WindowsEmailAddress
 						Disable-Mailbox -Identity $CurrentAccount.SamAccountName -confirm:$false
+						get-user $CurrentAccount.SamAccountName | Set-ADUser -EmailAddress $tempemail
 						Write-Host ("`t`t`t`t Moving User " + $ADUser.name + " to " + $DisabledOUDN)
 						#Move User to Disabled Outlook
 						Move-ADObject -Identity $ADUser -TargetPath $DisabledOUDN
@@ -356,7 +380,9 @@ ForEach ($CurrentAccount In $enablemailusers) {
 					If ($ExportJobStatusName.status -eq 10) {
 						#Remove mailbox from Exchange
 						Write-Host ("`t`t`t`t Removing Mailbox from Exchange")
+						$tempemail = $CurrentAccount.WindowsEmailAddress
 						Disable-Mailbox -Identity $CurrentAccount.SamAccountName -confirm:$false
+						get-user $CurrentAccount.SamAccountName | Set-ADUser -EmailAddress $tempemail							
 						
 						#Move User to Disabled Outlook
 						Write-Host ("`t`t`t`t Moving User " + $ADUser.name + " to " + $DisabledOUDN)
@@ -367,6 +393,7 @@ ForEach ($CurrentAccount In $enablemailusers) {
 		}
 	}
 }
+
 If (-Not [string]::IsNullOrEmpty($LogFile)) {
 	Stop-Transcript
 }
