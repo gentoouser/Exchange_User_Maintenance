@@ -32,8 +32,9 @@ Changes:
 	*Added keywords "No Auto-Clean" in the description in AD to Not export mailbox to pst . - Version 1.5.0
 	*Added Transcript Logging - Version 1.5.1
 	*Updated so old e-mail address is put back on AD acount after exchange account is removed - Version 1.5.2	
+	*Update issue where e-mail forwarding was not being set. - Version 1.5.3
 #>
-$ScriptVersion = 1.5.1
+$ScriptVersion = "1.5.3"
 #############################################################################
 # User Variables
 #############################################################################
@@ -203,7 +204,7 @@ ForEach ($EEUser in $enablemailusers) {
 			Write-Host ("`tDisable Mail Name: " + $EEUser.Name + " Alias: " + $EEUser.SamAccountName + " Email: " + $EEUser.WindowsEmailAddress) -foregroundcolor "magenta"
 			$tempemail = $EEUser.WindowsEmailAddress
 			Disable-MailUser -Identity $EEUser.SamAccountName -Confirm:$False
-			get-user $EEUser.SamAccountName | Set-ADUser -EmailAddress $tempemail
+			Set-ADUser -identity $EEUser.SamAccountName -EmailAddress $tempemail
 		}
 		If ($EEUser.RecipientType -eq "UserMailbox" ) {
 			$CurrentMailBox = $EEUser | Get-Mailbox
@@ -263,7 +264,7 @@ ForEach ($EEUser in $enablemailusers) {
 					Write-Host ("`t`t`t`t Removing Mailbox from Exchange")
 					$tempemail = $EEUser.WindowsEmailAddress
 					Disable-Mailbox -Identity $EEUser.SamAccountName -confirm:$false
-					get-user $EEUser.SamAccountName | Set-ADUser -EmailAddress $tempemail
+					Set-ADUser -identity $EEUser.SamAccountName -EmailAddress $tempemail
 				}
 			}
 		}
@@ -312,12 +313,13 @@ ForEach ($CurrentAccount In $enablemailusers) {
 			#Look to see if OOA E-Mail is set
 			
 			#Enable Mail forwarding to manager.
-			If ($CurrentAccount.ForwardingAddress -eq $null -and !($ADUser.description.Contains("No Forwarding"))) {
-					If (-Not [string]::IsNullOrEmpty($CurrentAccount.Manager.ToString())) {
-						Write-Host ("`tForwarding e-mail for $($CurrentAccount.SamAccountName) to $($UsersManager.Name)") -foregroundcolor "Cyan"
-						$CurrentAccount | Set-Mailbox -DeliverToMailboxAndForward $true -ForwardingSMTPAddress $($UsersManager.WindowsEmailAddress.ToString())
+			If ([string]::IsNullOrWhiteSpace($CurrentAccount.ForwardingAddress) -and !($ADUser.description.Contains("No Forwarding"))) {
+					If (-Not [string]::IsNullOrWhiteSpace($CurrentAccount.Manager.ToString())) {
+						Write-Host ("`tForwarding e-mail for $($CurrentAccount.SamAccountName) to $($UsersManager.WindowsEmailAddress.ToString())") -foregroundcolor "Cyan"
+						Set-Mailbox -Identity $CurrentAccount.SamAccountName -DeliverToMailboxAndForward $false -ForwardingSMTPAddress $null -verbose
+						Set-Mailbox -Identity $CurrentAccount.SamAccountName -DeliverToMailboxAndForward $true -ForwardingSMTPAddress $UsersManager.WindowsEmailAddress.ToString().ToLower() -verbose
 						Write-Host ("`t Enabled Auto-Reply for: $($CurrentAccount.SamAccountName)") -foregroundcolor "yellow"
-						$CurrentAccount | Set-MailboxAutoReplyConfiguration -AutoReplyState enabled -ExternalAudience "all" -InternalMessage "$($CurrentAccount.FirstName) is no longer with $Company For any business related needs please e-mail $($UsersManager.FirstName) at $($UsersManager.WindowsEmailAddress). " -ExternalMessage "$($CurrentAccount.FirstName) is no longer with $Company For any business related needs please e-mail $($UsersManager.FirstName) at $($UsersManager.WindowsEmailAddress). "
+						Set-MailboxAutoReplyConfiguration -Identity $CurrentAccount.SamAccountName -AutoReplyState enabled -ExternalAudience "all" -InternalMessage "$($CurrentAccount.FirstName) is no longer with $Company For any business related needs please e-mail $($UsersManager.FirstName) at $($UsersManager.WindowsEmailAddress). " -ExternalMessage "$($CurrentAccount.FirstName) is no longer with $Company For any business related needs please e-mail $($UsersManager.FirstName) at $($UsersManager.WindowsEmailAddress). "
 					}	
 			}
 
