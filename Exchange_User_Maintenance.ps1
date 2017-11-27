@@ -33,8 +33,9 @@ Changes:
 	*Added Transcript Logging - Version 1.5.1
 	*Updated so old e-mail address is put back on AD acount after exchange account is removed - Version 1.5.2	
 	*Update issue where e-mail forwarding was not being set. - Version 1.5.3
+	*Fixed issue with export to PST status display not working - Version 1.5.4
 #>
-$ScriptVersion = "1.5.3"
+$ScriptVersion = "1.5.4"
 #############################################################################
 # User Variables
 #############################################################################
@@ -222,12 +223,12 @@ ForEach ($EEUser in $enablemailusers) {
 
 				
 				$ExportJobStatusName = $null
-				Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity } | Get-MailboxExportRequestStatistics | ForEach-Object {If ($_.identity -ne $null) {$ExportJobStatusName = $_}}
+				$ExportJobStatusName = Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity -and $_.status -ne 10 } | select -first 1 | Get-MailboxExportRequestStatistics 
 				If ($ExportJobStatusName -ne $null) {
 					Write-Host ("`t`t`t Job Status loop: " + $ExportJobStatusName.status)
 					while (($ExportJobStatusName.status -ne "Completed") -And ($ExportJobStatusName.status -ne "Failed")) {
 						#View Status of Mailbox Export
-						Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity } | Get-MailboxExportRequestStatistics | ForEach-Object {If ($_.identity -ne $null) {$ExportJobStatusName = $_}}
+						$ExportJobStatusName = Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity -and $_.status -ne 10 } | select -first 1 | Get-MailboxExportRequestStatistics 
 						 Write-Progress -Activity $("Exporting user: " + $ExportJobStatusName.SourceAlias ) -status $("Export Percent Complete:" + $ExportJobStatusName.PercentComplete + " Copied " + $ExportJobStatusName.BytesTransferred + " out of " + $ExportJobStatusName.EstimatedTransferSize ) -percentComplete $ExportJobStatusName.PercentComplete
 						 #$ExportJobStatusName | ft SourceAlias,Status,PercentComplete,EstimatedTransferSize,BytesTransferred
 						Start-Sleep -Seconds 10
@@ -244,10 +245,10 @@ ForEach ($EEUser in $enablemailusers) {
 			} else {
 				Write-Host ("`t`tUser " + $EEUser.Name + " already submitted. " + $DisabledOUDN)
 				$ExportJobStatusName = $null
-				Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity } | Get-MailboxExportRequestStatistics | ForEach-Object {If ($_.identity -ne $null) {$ExportJobStatusName = $_}}
+				$ExportJobStatusName = Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity -and $_.status -ne 10 } | select -first 1 | Get-MailboxExportRequestStatistics 
 				If ($ExportJobStatusName -ne $null -And $ExportJobStatusName.status -ne 10) {
 					while  ($ExportJobStatusName.status -ne 10) {
-						Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity } | Get-MailboxExportRequestStatistics | ForEach-Object {If ($_.identity -ne $null) {$ExportJobStatusName = $_}}
+						$ExportJobStatusName = Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity -and $_.status -ne 10 } | select -first 1 | Get-MailboxExportRequestStatistics 
 						# Write-Host ("`t`t`t`t Job Status already submitted loop: " + $ExportJobStatusName.status)
 						If ($ExportJobStatusName.status -eq "Completed") {break}
 						If ($ExportJobStatusName.status -eq "Failed") {break}
@@ -258,7 +259,7 @@ ForEach ($EEUser in $enablemailusers) {
 					}
 				}
 				#$ExportJobStatusName.status = 10 = Complete
-				Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity } | Get-MailboxExportRequestStatistics | ForEach-Object {If ($_.identity -ne $null) {$ExportJobStatusName = $_}}
+				$ExportJobStatusName = Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity -and $_.status -ne 10 } | select -first 1 | Get-MailboxExportRequestStatistics 
 				If ($ExportJobStatusName.status -eq 10) {
 					#Remove mailbox from Exchange
 					Write-Host ("`t`t`t`t Removing Mailbox from Exchange")
@@ -314,7 +315,7 @@ ForEach ($CurrentAccount In $enablemailusers) {
 			
 			#Enable Mail forwarding to manager.
 			If ([string]::IsNullOrWhiteSpace($CurrentAccount.ForwardingAddress) -and !($ADUser.description.Contains("No Forwarding"))) {
-					If (-Not [string]::IsNullOrWhiteSpace($CurrentAccount.Manager.ToString())) {
+					If (-Not [string]::IsNullOrEmpty($CurrentAccount.Manager)) {
 						Write-Host ("`tForwarding e-mail for $($CurrentAccount.SamAccountName) to $($UsersManager.WindowsEmailAddress.ToString())") -foregroundcolor "Cyan"
 						Set-Mailbox -Identity $CurrentAccount.SamAccountName -DeliverToMailboxAndForward $false -ForwardingSMTPAddress $null -verbose
 						Set-Mailbox -Identity $CurrentAccount.SamAccountName -DeliverToMailboxAndForward $true -ForwardingSMTPAddress $UsersManager.WindowsEmailAddress.ToString().ToLower() -verbose
@@ -336,28 +337,28 @@ ForEach ($CurrentAccount In $enablemailusers) {
 					New-MailboxExportRequest -Mailbox $CurrentAccount.SamAccountName -FilePath $($HomeDriveShare + "\" + $CurrentAccount.SamAccountName  + "\" + $PSTFolder + "\" + $($CurrentAccount.SamAccountName) + '.pst')
 					$ExportJobName = $null
 
-					Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity } | Get-MailboxExportRequestStatistics | ForEach-Object {If ($_.identity -ne $null) {$ExportJobName = $_}}
+					$ExportJobName = Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity -and $_.status -ne 10 } | select -first 1 | Get-MailboxExportRequestStatistics 
 
 					If ($ExportJobName -ne $null) {
 						while ($ExportJobName.status -ne 10 ) {
-							Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity } | Get-MailboxExportRequestStatistics | ForEach-Object {If ($_.identity -ne $null) {$ExportJobName = $_.name}}
+							$ExportJobName = Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity -and $_.status -ne 10 } | select -first 1 | Get-MailboxExportRequestStatistics 
 							# Write-Host ("`t`t`t`t Job Status loop: " + $ExportJobName.status)
 							If ($ExportJobName.status -eq "Completed") {break}
 							If ($ExportJobName.status -eq "Failed") {break}
 							#View Status of Mailbox Export
 							Write-Progress -Activity $("Exporting user: " + $ExportJobName.SourceAlias ) -status $("Export Percent Complete:" + $ExportJobName.PercentComplete + " Copied " + $ExportJobName.BytesTransferred + " out of " + $ExportJobName.EstimatedTransferSize ) -percentComplete $ExportJobName.PercentComplete
-							#$ExportJobName | ft SourceAlias,Status,PercentComplete,EstimatedTransferSize,BytesTransferred
+
 							Start-Sleep -Seconds 10
 						}
 					}
 					#$ExportJobStatusName.status = 10 = Complete
-					Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity } | Get-MailboxExportRequestStatistics | ForEach-Object {If ($_.identity -ne $null) {$ExportJobName = $_}}
+					$ExportJobName = Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity -and $_.status -ne 10 } | select -first 1 | Get-MailboxExportRequestStatistics 
 					If ($ExportJobName.status -eq 10) {
 						Write-Host ("`t`t`t`t Removing Mailbox from Exchange")
 						#Remove mailbox from Exchange
 						$tempemail = $CurrentAccount.WindowsEmailAddress
 						Disable-Mailbox -Identity $CurrentAccount.SamAccountName -confirm:$false
-						get-user $CurrentAccount.SamAccountName | Set-ADUser -EmailAddress $tempemail
+						Set-ADUser -Identity $CurrentAccount.SamAccountName -EmailAddress $tempemail
 						Write-Host ("`t`t`t`t Moving User " + $ADUser.name + " to " + $DisabledOUDN)
 						#Move User to Disabled Outlook
 						Move-ADObject -Identity $ADUser -TargetPath $DisabledOUDN
@@ -365,10 +366,11 @@ ForEach ($CurrentAccount In $enablemailusers) {
 				} else {
 					Write-Host ("`t`tUser " + $CurrentAccount.Name + " already submitted. " + $DisabledOUWithEmailRule)
 					$ExportJobStatusName = $null
-					Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity } | Get-MailboxExportRequestStatistics | ForEach-Object {If ($_.identity -ne $null) {$ExportJobStatusName = $_}}
+					$ExportJobStatusName = Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity -and $_.status -ne 10 } | select -first 1 | Get-MailboxExportRequestStatistics 
+					
 					If ($ExportJobStatusName -ne $null) {
 						while  ($ExportJobStatusName.status -ne 10) {
-							Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity } | Get-MailboxExportRequestStatistics | ForEach-Object {If ($_.identity -ne $null) {$ExportJobStatusName = $_}}
+							$ExportJobStatusName = Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity -and $_.status -ne 10 } | select -first 1 | Get-MailboxExportRequestStatistics 
 							# Write-Host ("`t`t`t`t Job Status already submitted loop: " + $ExportJobStatusName.status)
 							If ($ExportJobStatusName.status -eq "Completed") {break}
 							If ($ExportJobStatusName.status -eq "Failed") {break}
@@ -378,7 +380,7 @@ ForEach ($CurrentAccount In $enablemailusers) {
 						}
 					}
 					#$ExportJobStatusName.status = 10 = Complete
-					Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity } | Get-MailboxExportRequestStatistics | ForEach-Object {If ($_.identity -ne $null) {$ExportJobStatusName = $_}}
+					$ExportJobStatusName = Get-MailboxExportRequest | Where-Object { $_.mailbox -eq $CurrentMailBox.Identity -and $_.status -ne 10 } | select -first 1 | Get-MailboxExportRequestStatistics 
 					If ($ExportJobStatusName.status -eq 10) {
 						#Remove mailbox from Exchange
 						Write-Host ("`t`t`t`t Removing Mailbox from Exchange")
