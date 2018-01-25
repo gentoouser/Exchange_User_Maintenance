@@ -34,8 +34,9 @@ Changes:
 	*Updated so old e-mail address is put back on AD acount after exchange account is removed - Version 1.5.2	
 	*Update issue where e-mail forwarding was not being set. - Version 1.5.3
 	*Fixed issue with export to PST status display not working - Version 1.5.4
+	*Fixed output issue - Version 1.5.5
 #>
-$ScriptVersion = "1.5.4"
+$ScriptVersion = "1.5.5"
 #############################################################################
 # User Variables
 #############################################################################
@@ -141,9 +142,9 @@ ForEach ($EMOU in $EnableEmailUsersOUs) {
 		if (($data[0] -ne "") -and ($data[1] -ne $PrimaryEmailDomain)) {
 			Write-Host ("`tEnable Mail Name: " + $_.Name + " Alias: " + $_.SamAccountName + " Email: " + $_.WindowsEmailAddress) -foregroundcolor "Gray"
 			#Remove any Exchange Attributes to reduce errors
-			set-aduser -Identity $_.SamAccountName -clear msExchMailboxGuid,msexchhomeservername,legacyexchangedn,mailnickname,msexchmailboxsecuritydescriptor,msexchpoliciesincluded,msexchrecipientdisplaytype,msexchrecipienttypedetails,msexchumdtmfmap,msexchuseraccountcontrol,msexchversion	
+			set-aduser -Identity $_.SamAccountName -clear msExchMailboxGuid,msexchhomeservername,legacyexchangedn,mailnickname,msexchmailboxsecuritydescriptor,msexchpoliciesincluded,msexchrecipientdisplaytype,msexchrecipienttypedetails,msexchumdtmfmap,msexchuseraccountcontrol,msexchversion | out-null
 			#Write-Host ("`tEnable-MailUser -Identity " + $_.Name + " -ExternalEmailAddress " + $_.WindowsEmailAddress + " -Alias " + $_.SamAccountName)
-			Enable-MailUser -Identity $_.Name -ExternalEmailAddress $_.WindowsEmailAddress.tostring() -Alias $_.SamAccountName.tostring() 
+			Enable-MailUser -Identity $_.Name -ExternalEmailAddress $_.WindowsEmailAddress.tostring() -Alias $_.SamAccountName.tostring() | out-null
 		}
 	}
 }
