@@ -36,8 +36,9 @@ Changes:
 	*Fixed issue with export to PST status display not working - Version 1.5.4
 	*Fixed output issue - Version 1.5.5
 	*Fixed issue to allow unlimited results 1.5.6
+	*Missed some calls for in allow unlimited results 1.5.6 - 1.5.7
 #>
-$ScriptVersion = "1.5.6"
+$ScriptVersion = "1.5.7"
 #############################################################################
 # User Variables
 #############################################################################
@@ -242,7 +243,7 @@ ForEach ($EEUser in $enablemailusers) {
 					#Remove mailbox from Exchange
 					$tempemail = $EEUser.WindowsEmailAddress	
 					Disable-Mailbox -Identity $EEUser.SamAccountName -confirm:$false
-					get-user $EEUser.SamAccountName | Set-ADUser -EmailAddress $tempemail
+					get-user $EEUser.SamAccountName -ResultSize Unlimited | Set-ADUser -EmailAddress $tempemail
 				}
 			} else {
 				Write-Host ("`t`tUser " + $EEUser.Name + " already submitted. " + $DisabledOUDN)
@@ -296,7 +297,7 @@ ForEach ($CurrentAccount In $enablemailusers) {
 				Write-Host ("`tDisable Mail Name: " + $CurrentAccount.Name + " Alias: " + $CurrentAccount.SamAccountName + " Email: " + $CurrentAccount.WindowsEmailAddress) -foregroundcolor "magenta"
 				$tempemail = $CurrentAccount.WindowsEmailAddress
 				Disable-MailUser -Identity $CurrentAccount.SamAccountName -Confirm:$False
-				get-user $CurrentAccount.SamAccountName | Set-ADUser -EmailAddress $tempemail				
+				get-user $CurrentAccount.SamAccountName  -ResultSize Unlimited | Set-ADUser -EmailAddress $tempemail				
 			}	
 		If ( $CurrentAccount.RecipientType -eq "UserMailbox" ) {
 			$CurrentMailBox = $CurrentAccount | Get-Mailbox
@@ -312,7 +313,7 @@ ForEach ($CurrentAccount In $enablemailusers) {
 			#Find out how old
 			$currentdate= GET-DATE
 			$TimeSpan = [DateTime]$currentdate - [DateTime]$StrTestDate
-			$UsersManager= get-user $CurrentAccount.Manager
+			$UsersManager= get-user $CurrentAccount.Manager -ResultSize Unlimited
 			#Look to see if OOA E-Mail is set
 			
 			#Enable Mail forwarding to manager.
@@ -388,7 +389,7 @@ ForEach ($CurrentAccount In $enablemailusers) {
 						Write-Host ("`t`t`t`t Removing Mailbox from Exchange")
 						$tempemail = $CurrentAccount.WindowsEmailAddress
 						Disable-Mailbox -Identity $CurrentAccount.SamAccountName -confirm:$false
-						get-user $CurrentAccount.SamAccountName | Set-ADUser -EmailAddress $tempemail							
+						get-user $CurrentAccount.SamAccountName -ResultSize Unlimited | Set-ADUser -EmailAddress $tempemail							
 						
 						#Move User to Disabled Outlook
 						Write-Host ("`t`t`t`t Moving User " + $ADUser.name + " to " + $DisabledOUDN)
