@@ -35,8 +35,9 @@ Changes:
 	*Update issue where e-mail forwarding was not being set. - Version 1.5.3
 	*Fixed issue with export to PST status display not working - Version 1.5.4
 	*Fixed output issue - Version 1.5.5
+	*Fixed issue to allow unlimited results 1.5.6
 #>
-$ScriptVersion = "1.5.5"
+$ScriptVersion = "1.5.6"
 #############################################################################
 # User Variables
 #############################################################################
@@ -136,7 +137,7 @@ ForEach ($EMOU in $EnableEmailUsersOUs) {
 	Write-Host ("")
 	Write-Host ("Searching for Users to Mail Enable in OU: `t $EMOU"  )
 	#Mail Enable All user that have E-Mail Address in an AD OU "UIC Campus Users"
-	$enablemailusers = get-user -organizationalUnit $EMOU  | where-object{$_.RecipientType -eq "User" -and $_.WindowsEmailAddress -ne $null}
+	$enablemailusers = get-user -organizationalUnit $EMOU -ResultSize Unlimited | where-object{$_.RecipientType -eq "User" -and $_.WindowsEmailAddress -ne $null}
 	$enablemailusers | ForEach-Object { 
 		$data = $_.WindowsEmailAddress -split("@")
 		if (($data[0] -ne "") -and ($data[1] -ne $PrimaryEmailDomain)) {
@@ -153,7 +154,7 @@ ForEach ($EMOU in $EnableMailboxUserOUs) {
 	Write-Host ("")
 	Write-Host ("Searching for Users to Create Mailboxes for in OU: `t $EMOU"  )
 	#Mail Enable All user that have E-Mail Address in an AD OU "UIC Campus Users"
-	$enablemailusers = get-user -organizationalUnit $EMOU  | where-object{$_.RecipientType -eq "User" -and $_.WindowsEmailAddress -ne $null}
+	$enablemailusers = get-user -organizationalUnit $EMOU -ResultSize Unlimited | where-object{$_.RecipientType -eq "User" -and $_.WindowsEmailAddress -ne $null}
 	$enablemailusers | ForEach-Object { 
 		$data = $_.WindowsEmailAddress -split("@")
 		if (($data[0] -ne "") -and ($data[1] -ne $PrimaryEmailDomain)) {
@@ -168,7 +169,7 @@ ForEach ($EMOU in $EnableMailboxUserOUs) {
 
 Write-Host ("Searching for Contacts to Mail Enable on OU: `t $ADContactOU")
 #Mail Enable All contact that have E-Mail Address in an AD OU "Contacts"
-$enablemailusers = Get-Contact -organizationalUnit $ADContactOU| where-object { $_.RecipientType -NotLike "*Mail*" -and $_.WindowsEmailAddress -ne $null }
+$enablemailusers = Get-Contact -organizationalUnit $ADContactOU -ResultSize Unlimited| where-object { $_.RecipientType -NotLike "*Mail*" -and $_.WindowsEmailAddress -ne $null }
 $enablemailusers | ForEach-Object { 
 	$data = $_.WindowsEmailAddress -split("@")
 	if (($data[0] -ne "") -and ($data[1] -ne $PrimaryEmailDomain)) {
@@ -199,7 +200,7 @@ get-aduser  -SearchBase $DisabledOUDN  -Filter * | ForEach-Object {
 
 Write-Host ("Searching for Users to Disable in Exchange in OU: `t $DisabledOUDN")
 #Mail Disable All user that have E-Mail Address in an AD OU "Disabled Users"
-$enablemailusers = get-user -organizationalUnit $DisabledOUDN | where-object {$_.RecipientType -ne "User" -and $_.WindowsEmailAddress -ne $null}
+$enablemailusers = get-user -organizationalUnit $DisabledOUDN -ResultSize Unlimited| where-object {$_.RecipientType -ne "User" -and $_.WindowsEmailAddress -ne $null}
 ForEach ($EEUser in $enablemailusers) {
 	If ($EEUser.WindowsEmailAddress -ne "") {
 		If ($EEUser.RecipientType -eq "MailUser" ) {
@@ -276,7 +277,7 @@ ForEach ($EEUser in $enablemailusers) {
 Write-Host ("Searching for Disable Users in OU: `t $DisabledOUWithEmailRule")
 
 #Mail Disable All user that have E-Mail Address in an AD OU "Disabled Users under 6 months"
-$enablemailusers = get-user -organizationalUnit $DisabledOUWithEmailRule | where-object {$_.RecipientType -ne "User" -and $_.WindowsEmailAddress -ne $null}
+$enablemailusers = get-user -organizationalUnit $DisabledOUWithEmailRule -ResultSize Unlimited | where-object {$_.RecipientType -ne "User" -and $_.WindowsEmailAddress -ne $null}
 ForEach ($CurrentAccount In $enablemailusers) { 
 	If ( $CurrentAccount.WindowsEmailAddress -ne "") {
 	$UserDN = $CurrentAccount.DistinguishedName
