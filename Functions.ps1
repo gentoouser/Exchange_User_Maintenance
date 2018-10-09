@@ -1,5 +1,4 @@
 #Region Move all users one at a time to new MailStore
-#Example: MoveMailbox -SourceDatabase "Managers_Mid" -DestinationDatabase "Temp" -Limit 10 -Descending
 function MoveMailbox(
 	[string]$SourceDatabase="",
 	[string]$DestinationDatabase="",
@@ -48,9 +47,11 @@ function MoveMailbox(
 			# Monitor Move
 			While ($moveRequests = Get-MoveRequest -Identity $_ | Where-Object {$_.Status -eq "InProgress" -or $_.Status -eq "Queued"}) {
 				foreach($moveRequest in $moveRequests) {
-					Get-MoveRequestStatistics -Identity $_  | select DisplayName, PercentComplete, BadItemsEncountered, TotalMailboxSize, TotalMailboxItemCount, TotalInProgressDuration,TotalSuspendedDuration,TotalQueuedDuration 
+					$CurrentStatus = Get-MoveRequestStatistics -Identity $_  | select DisplayName, PercentComplete, BadItemsEncountered, TotalMailboxSize, TotalMailboxItemCount, TotalInProgressDuration,TotalSuspendedDuration,TotalQueuedDuration
+					Write-Progress -Id 0 -Activity ("Source: " +  $SourceDatabase + "`t Destination: " + $DestinationDatabase) -status ("Processing User: " + $CurrentStatus.DisplayName + "Mail Size: " + $CurrentStatus.TotalMailboxSize + " Progress Duration: " + $CurrentStatus.TotalInProgressDuration ) -percentComplete $CurrentStatus.PercentComplete 
+					$host.ui.RawUI.WindowTitle = ( "Source: " +  $SourceDatabase + " Destination: " + $DestinationDatabase + " User: " + $CurrentStatus.DisplayName + " Progress: " + $CurrentStatus.PercentComplete + "%")
 				}
-			Write-Host "`t===Waiting for $Sleep seconds==="
+			#Write-Host "`t===Waiting for $Sleep seconds==="
 			
 			
 			Start-Sleep $Sleep;	
@@ -79,4 +80,3 @@ function MoveMailbox(
 		}
 		Stop-transcript
 	}
- #EndRegion Move all users one at a time to new MailStore
