@@ -5,7 +5,8 @@ function MoveMailbox(
 	[string]$LogPath="D:\",
 	[Int32]$Limit = 0,
 	[Int32]$Sleep = 120,
-	[Int32]$LowSpaceStop = 50,
+	[Int32]$LowSpaceStopEDB = 20,
+	[Int32]$LowSpaceStopLog = 50,
 	[Switch]$Descending = $false
 	)
 	{
@@ -40,15 +41,40 @@ function MoveMailbox(
 		}
 		#Get count of mailboxes to move
 		$count = 1
-		$mailboxcount = $mailboxmove.count
-		If ( $mailboxcount ) {
-			
-			
-			If ($Limit -le $mailboxcount) {
-				$mailboxcount = $Limit
-			}
+		[Int32]$mailboxcount = $mailboxmove.count
+		If ( $mailboxcount  -gt 0) {
 			$mailboxmove | foreach {
-				Write-Progress -Id 0 -Activity ("Source: " +  $SourceDatabase + "      Destination: " + $DestinationDatabase)  -status ("Moving: " + $count + " of " + $mailboxcount ) -percentComplete ($mailboxcount/$count)
+				#Get Drive Space
+				$ht = @{} 
+				$objDrives = Get-WmiObject Win32_Volume -Filter "DriveType='3'"
+				foreach ($ObjDisk in $objDrives) 
+				{ 
+					$size = ([Math]::Round($ObjDisk.Capacity /1GB,2))
+					$freespace = ([Math]::Round($ObjDisk.FreeSpace /1GB,2))
+					$IntUsed = ([Math]::Round($($size – $freeSpace),2))
+					$IntPercentFree = ([Math]::Round(($freeSpace/$size)*100,2))
+					$ht.Add($ObjDisk.Name,@{Label = $objDisk.Label; PercentFree = $IntPercentFree; Size = $size; FreeSpace = $freespace; Used = $IntUsed }) 
+				}
+				#Test for FreeSpace
+				#(Split-Path -Parent -Path $DDObject.EdbFilePath.PathName)
+				$EbdUsedPercent = ($ht.GetEnumerator() | Where-Object {$DDObject.EdbFilePath.PathName -like ($_.key + "*") -and $_.key.tostring().length -gt 3}).value.PercentFree
+				If ($EbdUsedPercent -le $LowSpaceStopEDB){
+					Write-Host ("="*[console]::BufferWidth) -ForegroundColor Red
+					Write-Host ("!!! Stopping Due to Low Space on " + $DDObject.EdbFilePath.PathName + "!!!") -ForegroundColor Red
+					Write-Host ("Drive is at: " + $EbdUsedPercent + "% Free" ) -ForegroundColor Red
+					Write-Host ("="*[console]::BufferWidth) -ForegroundColor Red
+					break; 
+				}				
+				$LogUsedPercent = ($ht.GetEnumerator() | Where-Object {$DDObject.LogFolderPath.PathName -like ($_.key + "*") -and $_.key.tostring().length -gt 3}).value.PercentFree
+				If ($LogUsedPercent -le $LowSpaceStopLog){
+					Write-Host ("="*[console]::BufferWidth) -ForegroundColor Red
+					Write-Host ("!!! Stopping Due to Low Space on " + $DDObject.LogFolderPath.PathName + "!!!") -ForegroundColor Red
+					Write-Host ("Drive is at: " + $LogUsedPercent + "% Free" ) -ForegroundColor Red
+					Write-Host ("="*[console]::BufferWidth) -ForegroundColor Red
+					break; 
+				}
+				#Update status
+				Write-Progress -Id 0 -Activity ("Source: " +  $SourceDatabase + "      Destination: " + $DestinationDatabase)  -status ("Moving: " + $count + " of " + $mailboxcount + " [Database Drive Free: " + $EbdUsedPercent + "%] [Log Drive Free: " + $LogUsedPercent + "%]") -percentComplete ($count/$mailboxcount)
 				Write-Host ("-"*[console]::BufferWidth)
 				#Start Move
 				New-MoveRequest -Identity $_ -TargetDatabase $DestinationDatabase
@@ -59,34 +85,14 @@ function MoveMailbox(
 						$CurrentStatus = Get-MoveRequestStatistics -Identity $_  | Select-Object DisplayName, PercentComplete, BadItemsEncountered, TotalMailboxSize, TotalMailboxItemCount, TotalInProgressDuration,TotalSuspendedDuration,TotalQueuedDuration
 						Write-Progress -Id 1 -Activity ("Processing User: " + $CurrentStatus.DisplayName)  -status ("Mail Size: " + $CurrentStatus.TotalMailboxSize + "      Progress Duration: " + $CurrentStatus.TotalInProgressDuration ) -percentComplete $CurrentStatus.PercentComplete 
 						
-						$host.ui.RawUI.WindowTitle = ( "Source: " +  $SourceDatabase + "      Destination: " + $DestinationDatabase + "      User: " + $CurrentStatus.DisplayName + "      Progress: " + $CurrentStatus.PercentComplete + "%      Total Progress: " + (($count/$mailboxcount)*100) + "%")
+						$host.ui.RawUI.WindowTitle = ( "Source: " +  $SourceDatabase + "      Destination: " + $DestinationDatabase + "      User: " + $CurrentStatus.DisplayName + "      Progress: " + $CurrentStatus.PercentComplete + "%      Total Progress: " + ([Math]::Round(($count/$mailboxcount)*100)) + "%")
 					}
 				#Write-Host "`t===Waiting for $Sleep seconds==="
 				
 				
 				Start-Sleep $Sleep;	
 				} 
-				#Get Drive Space
-				$ht = @{} 
-				$objDrives = Get-WmiObject Win32_Volume -Filter "DriveType='3'"
-				foreach ($ObjDisk in $objDrives) 
-				{ 
-					$size = ([Math]::Round($ObjDisk.Capacity /1GB,2))
-					$freespace = ([Math]::Round($ObjDisk.FreeSpace /1GB,2))
-					$IntUsed = ([Math]::Round($($size – $freeSpace),2))
-					$IntPercentFree = ([Math]::Round(($freeSpace/$size)*100,2))
-					$ht.Add($ObjDisk.Name,@{Lable = $objDisk.Label; PercentFree = $IntPercentFree; Size = $size; FreeSpace = $freespace; Used = $IntUsed }) 
-				}
-				#Test for freespace
-				(Split-Path -Parent -Path $DDObject.EdbFilePath.PathName)
-				# $DatabaseUsedPercent = ($ht.GetEnumerator() | ?{(Split-Path -Parent -Path $DDObject.EdbFilePath.PathName) -like ($_.key + "*") -and $_.key.tostring().length -gt 3}).value.PercentFree
-				$LogUsedPercent = ($ht.GetEnumerator() | ?{$DDObject.LogFolderPath.PathName -like ($_.key + "*") -and $_.key.tostring().length -gt 3}).value.PercentFree
-				If ($LogUsedPercent -le $LowSpaceStop){
-					Write-Host ("="*[console]::BufferWidth) -ForegroundColor Red
-					Write-Host "!!! Stopping Due to Low Space on $DDObject.LogFolderPath.PathName !!!" -ForegroundColor Red
-					Write-Host ("="*[console]::BufferWidth) -ForegroundColor Red
-					break; 
-				}
+				
 				$count++
 			}
 		} else {
