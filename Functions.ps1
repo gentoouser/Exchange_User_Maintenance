@@ -74,7 +74,7 @@ function MoveMailbox(
 					break; 
 				}
 				#Update status
-				Write-Progress -Id 0 -Activity ("Source: " +  $SourceDatabase + "      Destination: " + $DestinationDatabase)  -status ("Moving: " + $count + " of " + $mailboxcount + " [Database Drive Free: " + $EbdUsedPercent + "%] [Log Drive Free: " + $LogUsedPercent + "%]") -percentComplete ($count/$mailboxcount)
+				Write-Progress -Id 0 -Activity ("Source: " +  $SourceDatabase + "      Destination: " + $DestinationDatabase)  -status ("Moving: " + $count + " of " + $mailboxcount + " [Database Drive Free: " + $EbdUsedPercent + "%] [Log Drive Free: " + $LogUsedPercent + "%]") -percentComplete ([Math]::Round(($count/$mailboxcount)*100))
 				Write-Host ("-"*[console]::BufferWidth)
 				#Start Move
 				New-MoveRequest -Identity $_ -TargetDatabase $DestinationDatabase
@@ -100,6 +100,7 @@ function MoveMailbox(
 		}
 		Stop-transcript
 	}
+
 
 # MoveMailbox -SourceDatabase "SourceMailStore" -DestinationDatabase "DestinationMailStore" -Limit 10 -Descending
 #endregion Move all users one at a time to new MailStore
